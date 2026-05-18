@@ -18,6 +18,8 @@ import logging
 import uuid
 from pathlib import Path
 
+import cv2
+import numpy as np
 from django.conf import settings
 from django.shortcuts import render, redirect
 from django.views import View
@@ -57,6 +59,20 @@ class UploadXRayView(View):
             # Guardar imagen subida temporalmente
             uploaded_image = form.cleaned_data['image']
             image_path = self._save_uploaded_image(uploaded_image)
+
+            # Validar que la imagen parece una radiografía antes de correr YOLO
+            xray_error = self._validate_xray(image_path)
+            if xray_error:
+                import os
+                try:
+                    os.remove(image_path)
+                except Exception:
+                    pass
+                return render(request, 'detection/upload.html', {
+                    'form': form,
+                    'model_available': yolo_service.is_available,
+                    'error': xray_error,
+                })
 
             # Ejecutar detección YOLO
             yolo_result = yolo_service.detect(str(image_path))
@@ -131,6 +147,68 @@ class UploadXRayView(View):
             return f"{settings.MEDIA_URL}{rel_path.as_posix()}"
         except ValueError:
             return ''
+
+    def _validate_xray(self, image_path: Path) -> str:
+        """
+        Valida que la imagen parece una radiografía de mano/muñeca.
+        Retorna mensaje de error si no es válida, cadena vacía si es OK.
+
+        Tres checks con numpy/OpenCV (sin dependencia extra):
+          1. Colorfulness < 15  → imagen casi gris; rechaza fotos/caricaturas color
+          2. StdDev > 20        → tiene contraste; rechaza imágenes uniformes
+          3. AvgGradient < 22   → transiciones suaves; rechaza dibujos con bordes duros
+
+        Las radiografías tienen gradientes promedio bajos (tejidos con transición
+        gradual de grises). Los dibujos/grabados tienen muchos bordes abruptos
+        que elevan el gradiente promedio aunque tengan grises intermedios.
+        """
+        try:
+            img = cv2.imread(str(image_path))
+            if img is None:
+                return ''  # Dejar que YOLO maneje el error de lectura
+
+            # Reducir a 100×100 para análisis rápido
+            small = cv2.resize(img, (100, 100)).astype(np.float32)
+            b, g, r = small[:, :, 0], small[:, :, 1], small[:, :, 2]
+
+            # Check 1: Colorfulness (canales R/G/B muy diferentes → imagen a color)
+            avg_ch = (r + g + b) / 3.0
+            colorfulness = (np.abs(r - avg_ch) + np.abs(g - avg_ch) + np.abs(b - avg_ch)).mean()
+            if colorfulness > 15:
+                return (
+                    'Imagen rechazada: parece una fotografía o imagen a color. '
+                    'Este sistema solo acepta radiografías en escala de grises '
+                    'de mano y muñeca pediátrica.'
+                )
+
+            # Convertir a luminancia para checks 2 y 3
+            gray = (r * 0.299 + g * 0.587 + b * 0.114)
+
+            # Check 2: Imagen demasiado uniforme (blanco/negro/gris sólido)
+            if gray.std() < 20:
+                return (
+                    'Imagen rechazada: la imagen parece estar en blanco, negro '
+                    'o ser demasiado uniforme para ser una radiografía.'
+                )
+
+            # Check 3: Gradiente local promedio
+            # X-rays → transiciones suaves → gradiente bajo (~5-18)
+            # Dibujos/grabados → muchos bordes duros → gradiente alto (>22)
+            grad_h = np.abs(np.diff(gray, axis=1))   # diferencia horizontal
+            grad_v = np.abs(np.diff(gray, axis=0))   # diferencia vertical
+            avg_gradient = (grad_h.mean() + grad_v.mean()) / 2.0
+            if avg_gradient > 22:
+                return (
+                    'Imagen rechazada: parece un dibujo, grabado o esquema gráfico. '
+                    'Las radiografías tienen transiciones de gris suaves entre tejidos. '
+                    'Sube una radiografía real de mano o muñeca.'
+                )
+
+            return ''  # Imagen válida
+
+        except Exception as e:
+            logger.warning(f"Error en validación de imagen: {e}")
+            return ''  # Ante la duda, dejar pasar y que YOLO evalúe
 
 
 class ResultView(View):

@@ -55,9 +55,9 @@
                     </div>
                     <div id="drawing-warning" class="alert alert-danger d-none py-2 mb-3">
                         <i class="bi bi-x-circle me-1"></i>
-                        <strong>Imagen rechazada: parece un dibujo o gráfico.</strong>
-                        Las radiografías tienen gradientes de gris suaves (tejidos, huesos).
-                        Esta imagen tiene solo blanco y negro puros, sin grises intermedios.
+                        <strong>Imagen rechazada: parece un dibujo o grabado.</strong>
+                        Las radiografías tienen transiciones de gris suaves entre tejidos.
+                        Esta imagen tiene bordes demasiado abruptos.
                         <strong>El análisis está bloqueado.</strong>
                     </div>
 
@@ -220,34 +220,45 @@
             const data = ctx.getImageData(0, 0, 100, 100).data;
 
             let totalColorfulness = 0;
-            let midGrayCount = 0;
             const luminances = [];
             const pixels = data.length / 4;
+            const W = 100; // canvas width
 
             for (let i = 0; i < data.length; i += 4) {
                 const r = data[i], g = data[i + 1], b = data[i + 2];
                 const avg = (r + g + b) / 3;
                 totalColorfulness += Math.abs(r - avg) + Math.abs(g - avg) + Math.abs(b - avg);
                 luminances.push(avg);
-                // Rango 40-210: donde aparecen tejidos y huesos en radiografías
-                if (avg >= 40 && avg <= 210) midGrayCount++;
             }
 
             const avgColorfulness = totalColorfulness / pixels;
-            const midGrayRatio    = midGrayCount / pixels;
 
             const meanLum = luminances.reduce((a, v) => a + v, 0) / pixels;
             const stdDev  = Math.sqrt(
                 luminances.reduce((s, v) => s + Math.pow(v - meanLum, 2), 0) / pixels
             );
 
+            // Gradiente local promedio: diferencia entre píxeles adyacentes
+            // Radiografías → transiciones suaves → gradiente bajo
+            // Dibujos/grabados → muchos bordes duros → gradiente alto
+            let totalGrad = 0, gradCount = 0;
+            for (let y = 0; y < W - 1; y++) {
+                for (let x = 0; x < W - 1; x++) {
+                    const lum   = luminances[y * W + x];
+                    const lumR  = luminances[y * W + x + 1];
+                    const lumD  = luminances[(y + 1) * W + x];
+                    totalGrad += Math.abs(lum - lumR) + Math.abs(lum - lumD);
+                    gradCount += 2;
+                }
+            }
+            const avgGradient = totalGrad / gradCount;
+
             // Check 1: muy colorida → no es radiografía
             const isColorful = avgColorfulness > 15;
             // Check 2: demasiado uniforme → imagen en blanco/negro/gris sólido
             const isUniform  = stdDev < 20;
-            // Check 3: dibujo B&W → tiene contraste pero casi sin grises intermedios
-            //   (el duck B&W tiene >30 stdDev pero solo ~5-8% de mid-gray)
-            const isDrawing  = !isUniform && midGrayRatio < 0.12;
+            // Check 3: bordes abruptos → dibujo, grabado o esquema gráfico
+            const isDrawing  = !isUniform && avgGradient > 22;
 
             colorWarning.classList.toggle('d-none',   !isColorful);
             blankWarning.classList.toggle('d-none',   !isUniform);
