@@ -62,7 +62,8 @@ class YOLOService:
     def __init__(self):
         self._model = None
         self._model_path = settings.YOLO_MODEL_PATH
-        self._load_model()
+        # NO cargar el modelo aquí — se hace lazy en la primera llamada a detect().
+        # Esto permite que Gunicorn arranque sin consumir los 512 MB del free tier.
 
     def _load_model(self):
         """Carga el modelo YOLOv8 desde el archivo .pt."""
@@ -117,6 +118,11 @@ class YOLOService:
         cv2.imwrite(tmp_path, bgr)
         return tmp_path
 
+    def _ensure_loaded(self):
+        """Carga el modelo si aún no está cargado (lazy loading para producción)."""
+        if self._model is None:
+            self._load_model()
+
     def detect(self, image_path: str) -> YOLOResult:
         """
         Ejecuta detección de fracturas sobre una imagen.
@@ -127,6 +133,10 @@ class YOLOService:
         Returns:
             YOLOResult con las detecciones, imagen anotada y métricas.
         """
+        # Carga lazy: el modelo se carga en la primera petición, no al importar.
+        # Esto evita OOM en Render free tier (512 MB) durante el arranque de Gunicorn.
+        self._ensure_loaded()
+
         result = YOLOResult(original_image_path=image_path)
 
         if not self.is_available:
