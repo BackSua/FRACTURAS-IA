@@ -29,8 +29,24 @@
                 </div>
                 {% endif %}
 
+                <!-- Aviso de uso correcto -->
+                <div class="alert alert-info py-2 mb-3">
+                    <i class="bi bi-info-circle me-1"></i>
+                    <strong>Solo radiografías de mano y muñeca pediátrica.</strong>
+                    El modelo fue entrenado con el dataset GRAZPEDWRI-DX y no está diseñado
+                    para otros tipos de imágenes.
+                </div>
+
                 <form method="post" enctype="multipart/form-data" id="upload-form">
                     {% csrf_token %}
+
+                    <!-- Aviso imagen no válida -->
+                    <div id="color-warning" class="alert alert-warning d-none py-2 mb-3">
+                        <i class="bi bi-exclamation-triangle me-1"></i>
+                        <strong>La imagen parece muy colorida.</strong>
+                        Las radiografías son casi grises. Asegúrate de subir una radiografía real
+                        para obtener resultados válidos.
+                    </div>
 
                     <!-- Zona de carga de imagen -->
                     <div class="upload-zone mb-4" id="drop-zone">
@@ -161,8 +177,41 @@
             previewDiv.classList.remove('d-none');
             const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
             fileInfo.textContent = file.name + ' (' + sizeMB + ' MB)';
+            checkIfXray(e.target.result);
         };
         reader.readAsDataURL(file);
+    }
+
+    // Detecta si la imagen es muy colorida (no es radiografía)
+    // Las radiografías son casi en escala de grises: R ≈ G ≈ B
+    function checkIfXray(dataUrl) {
+        const colorWarning = document.getElementById('color-warning');
+        const img = new Image();
+        img.onload = function() {
+            const canvas = document.createElement('canvas');
+            // Samplear a 50x50 para velocidad
+            canvas.width = 50; canvas.height = 50;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, 50, 50);
+            const data = ctx.getImageData(0, 0, 50, 50).data;
+            let totalColorfulness = 0;
+            const pixels = data.length / 4;
+            for (let i = 0; i < data.length; i += 4) {
+                const r = data[i], g = data[i+1], b = data[i+2];
+                // Cuánto difieren los canales entre sí (0 = gris perfecto)
+                const avg = (r + g + b) / 3;
+                const diff = Math.abs(r - avg) + Math.abs(g - avg) + Math.abs(b - avg);
+                totalColorfulness += diff;
+            }
+            const avgColorfulness = totalColorfulness / pixels;
+            // Umbral: si el promedio de diferencia de canal > 15 → muy colorida
+            if (avgColorfulness > 15) {
+                colorWarning.classList.remove('d-none');
+            } else {
+                colorWarning.classList.add('d-none');
+            }
+        };
+        img.src = dataUrl;
     }
 
     // Spinner al enviar
