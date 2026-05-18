@@ -257,14 +257,24 @@
             const isColorful = avgColorfulness > 15;
             // Check 2: demasiado uniforme → imagen en blanco/negro/gris sólido
             const isUniform  = stdDev < 20;
-            // Check 3: bordes abruptos → dibujo, grabado o esquema gráfico
-            const isDrawing  = !isUniform && avgGradient > 22;
+            // Check 3: bordes abruptos → dibujo, grabado
+            const isDrawing = !isUniform && avgGradient > 22;
+
+            // Check 4: ratio de píxeles extremos (negro puro + blanco puro)
+            // Logos/dibujos B&W: > 65% en extremos. Radiografías: < 50%
+            let nearBlack = 0, nearWhite = 0;
+            for (const v of luminances) {
+                if (v < 30) nearBlack++;
+                else if (v > 225) nearWhite++;
+            }
+            const extremeRatio = (nearBlack + nearWhite) / pixels;
+            const isLogoOrIcon = extremeRatio > 0.65;
 
             colorWarning.classList.toggle('d-none',   !isColorful);
             blankWarning.classList.toggle('d-none',   !isUniform);
-            drawingWarning.classList.toggle('d-none', !isDrawing);
+            drawingWarning.classList.toggle('d-none', !(isDrawing || isLogoOrIcon));
 
-            const invalid = isColorful || isUniform || isDrawing;
+            const invalid = isColorful || isUniform || isDrawing || isLogoOrIcon;
             submitBtn.disabled = invalid;
             submitBtn.title = invalid ? 'Sube una radiografía válida de mano o muñeca' : '';
         };

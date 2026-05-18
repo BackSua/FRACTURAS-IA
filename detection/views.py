@@ -194,13 +194,27 @@ class UploadXRayView(View):
             # Check 3: Gradiente local promedio
             # X-rays → transiciones suaves → gradiente bajo (~5-18)
             # Dibujos/grabados → muchos bordes duros → gradiente alto (>22)
-            grad_h = np.abs(np.diff(gray, axis=1))   # diferencia horizontal
-            grad_v = np.abs(np.diff(gray, axis=0))   # diferencia vertical
+            grad_h = np.abs(np.diff(gray, axis=1))
+            grad_v = np.abs(np.diff(gray, axis=0))
             avg_gradient = (grad_h.mean() + grad_v.mean()) / 2.0
             if avg_gradient > 22:
                 return (
                     'Imagen rechazada: parece un dibujo, grabado o esquema gráfico. '
                     'Las radiografías tienen transiciones de gris suaves entre tejidos. '
+                    'Sube una radiografía real de mano o muñeca.'
+                )
+
+            # Check 4: Ratio de píxeles extremos (negro puro + blanco puro)
+            # Dibujos/logos B&W: >65% de píxeles en rango 0-30 o 225-255
+            # Radiografías reales: huesos y tejidos producen grises intermedios
+            #   → extremeRatio típicamente < 50%
+            near_black = np.sum(gray < 30)
+            near_white = np.sum(gray > 225)
+            extreme_ratio = (near_black + near_white) / gray.size
+            if extreme_ratio > 0.65:
+                return (
+                    'Imagen rechazada: parece un logo, ícono o dibujo en blanco y negro. '
+                    'Las radiografías tienen variedad de tonos grises entre tejidos y huesos. '
                     'Sube una radiografía real de mano o muñeca.'
                 )
 
