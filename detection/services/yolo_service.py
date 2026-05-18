@@ -87,10 +87,26 @@ class YOLOService:
 
     # ── Carga ──────────────────────────────────────────────────────────────────
 
+    # URL pública del modelo en GitHub Releases (no requiere autenticación)
+    MODEL_URL = "https://github.com/BackSua/FRACTURAS-IA/releases/download/v1.0/best.onnx"
+
+    def _download_model(self):
+        """Descarga best.onnx desde GitHub Releases si no existe localmente."""
+        import urllib.request
+        logger.info(f"Descargando modelo ONNX desde {self.MODEL_URL} ...")
+        self._model_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            urllib.request.urlretrieve(self.MODEL_URL, str(self._model_path))
+            logger.info(f"Modelo descargado: {self._model_path} ({self._model_path.stat().st_size // 1_000_000} MB)")
+        except Exception as e:
+            logger.error(f"Error descargando modelo: {e}")
+
     def _load_model(self):
-        """Carga la sesión ONNX Runtime (una sola vez)."""
+        """Descarga (si falta) y carga la sesión ONNX Runtime (una sola vez)."""
         if not self._model_path.exists():
-            logger.warning(f"Modelo ONNX no encontrado en {self._model_path}")
+            self._download_model()
+        if not self._model_path.exists():
+            logger.warning(f"Modelo ONNX no disponible en {self._model_path}")
             return
         try:
             import onnxruntime as ort
