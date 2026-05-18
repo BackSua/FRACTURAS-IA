@@ -129,9 +129,9 @@ class YOLOService:
 
     @property
     def is_available(self) -> bool:
-        if self._session is not None:
-            return True
-        return self._model_path.exists()
+        # Siempre True: el modelo se descarga automáticamente en la primera
+        # llamada a detect() si no existe localmente.
+        return True
 
     # ── Preprocesamiento ───────────────────────────────────────────────────────
 
