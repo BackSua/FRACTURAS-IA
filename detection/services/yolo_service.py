@@ -1,13 +1,12 @@
 """
-Servicio de detección de fracturas con YOLOv8.
+Servicio de detección de fracturas con YOLOv8 — inferencia ONNX Runtime.
 
-Equivalente a un @Service en Spring Boot: encapsula la lógica de negocio
-de inferencia con YOLO. No conoce Django ni HTTP — recibe una ruta de
-imagen y retorna un resultado estructurado.
+Se usa onnxruntime-cpu en lugar de PyTorch para reducir el consumo de RAM
+de ~650 MB (PyTorch + ultralytics) a ~250 MB (onnxruntime + numpy + OpenCV).
+Esto permite desplegar en el plan gratuito de Render (512 MB).
 
-El modelo se carga UNA SOLA VEZ al importar el módulo (singleton).
-Cargar el modelo toma ~2-5 segundos; hacerlo por request haría la app
-inutilizable. En Spring Boot sería un @Bean singleton.
+La lógica de detección (preprocesamiento, NMS, postprocesamiento) se implementa
+manualmente con numpy y OpenCV, sin dependencia de la librería ultralytics.
 """
 
 import time
@@ -19,29 +18,51 @@ import cv2
 import numpy as np
 from django.conf import settings
 
-# Clases del dataset GRAZPEDWRI-DX que representan hallazgos patológicos reales.
-# "text" es excluido — son marcadores radiográficos (letras L/R, fecha, etc.)
-# colocados por el radiólogo en la placa, NO son fracturas.
+# Clases del dataset GRAZPEDWRI-DX — mismo orden que en el entrenamiento.
+# "text" = marcadores radiográficos (L/R, fecha), NO son fracturas.
+CLASS_NAMES = {
+    0: 'boneanomaly',
+    1: 'bonelesion',
+    2: 'foreignbody',
+    3: 'fracture',
+    4: 'metal',
+    5: 'periostealreaction',
+    6: 'pronatorsign',
+    7: 'softtissue',
+    8: 'text',
+}
+
 PATHOLOGY_CLASSES = frozenset({
     'fracture', 'boneanomaly', 'bonelesion', 'foreignbody',
-    'metal', 'periostealreaction', 'pronationsign', 'softtissue'
+    'metal', 'periostealreaction', 'pronatorsign', 'softtissue'
 })
+
+# Paleta de colores BGR por clase
+COLOR_MAP = {
+    'fracture':           (0, 255, 255),
+    'boneanomaly':        (0, 165, 255),
+    'bonelesion':         (0, 0, 255),
+    'foreignbody':        (255, 0, 255),
+    'metal':              (128, 128, 128),
+    'periostealreaction': (255, 255, 0),
+    'pronatorsign':       (255, 128, 0),
+    'softtissue':         (0, 255, 128),
+}
+DEFAULT_COLOR = (0, 255, 255)
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class Detection:
-    """Una detección individual de fractura."""
     class_name: str
     confidence: float
-    bbox: list  # [x1, y1, x2, y2] en píxeles
+    bbox: list          # [x1, y1, x2, y2] píxeles imagen original
     bbox_normalized: list  # [cx, cy, w, h] normalizado 0-1
 
 
 @dataclass
 class YOLOResult:
-    """Resultado completo de una inferencia YOLO."""
     detections: list = field(default_factory=list)
     fracture_detected: bool = False
     max_confidence: float = 0.0
@@ -53,233 +74,241 @@ class YOLOResult:
 
 class YOLOService:
     """
-    Servicio singleton que ejecuta inferencia YOLO sobre radiografías.
-
-    Se instancia una sola vez a nivel de módulo. El modelo se mantiene
-    en RAM durante toda la vida del proceso Django.
+    Singleton que ejecuta inferencia YOLOv8 vía ONNX Runtime.
+    El modelo se carga la primera vez que se llama a detect() (lazy loading).
     """
 
+    # Tamaño de entrada esperado por el modelo ONNX
+    INPUT_SIZE = 640
+
     def __init__(self):
-        self._model = None
-        self._model_path = settings.YOLO_MODEL_PATH
-        # NO cargar el modelo aquí — se hace lazy en la primera llamada a detect().
-        # Esto permite que Gunicorn arranque sin consumir los 512 MB del free tier.
+        self._session = None
+        self._model_path = Path(settings.BASE_DIR) / 'ml' / 'models' / 'best.onnx'
+
+    # ── Carga ──────────────────────────────────────────────────────────────────
 
     def _load_model(self):
-        """Carga el modelo YOLOv8 desde el archivo .pt."""
-        if not Path(self._model_path).exists():
-            logger.warning(
-                f"Modelo YOLO no encontrado en {self._model_path}. "
-                f"La detección no estará disponible hasta que se entrene el modelo."
-            )
+        """Carga la sesión ONNX Runtime (una sola vez)."""
+        if not self._model_path.exists():
+            logger.warning(f"Modelo ONNX no encontrado en {self._model_path}")
             return
-
         try:
-            from ultralytics import YOLO
-            self._model = YOLO(str(self._model_path))
-            logger.info(f"Modelo YOLO cargado: {self._model_path}")
+            import onnxruntime as ort
+            # Usar solo CPU para minimizar RAM
+            opts = ort.SessionOptions()
+            opts.inter_op_num_threads = 1
+            opts.intra_op_num_threads = 1
+            self._session = ort.InferenceSession(
+                str(self._model_path),
+                sess_options=opts,
+                providers=['CPUExecutionProvider'],
+            )
+            logger.info(f"Modelo ONNX cargado: {self._model_path}")
         except Exception as e:
-            logger.error(f"Error cargando modelo YOLO: {e}")
+            logger.error(f"Error cargando modelo ONNX: {e}")
+
+    def _ensure_loaded(self):
+        if self._session is None:
+            self._load_model()
 
     @property
     def is_available(self) -> bool:
-        """Indica si el modelo está disponible (archivo existe o ya cargado)."""
-        if self._model is not None:
+        if self._session is not None:
             return True
-        return Path(self._model_path).exists()
+        return self._model_path.exists()
 
-    def _preprocess_image(self, image_path: str) -> str:
+    # ── Preprocesamiento ───────────────────────────────────────────────────────
+
+    def _preprocess(self, image_path: str):
         """
-        Preprocesa la imagen para mejorar la compatibilidad con el modelo.
-
-        Aplica conversión a escala de grises + CLAHE (ecualización de histograma
-        adaptativa) para normalizar imágenes que provienen de fuentes externas
-        (fotos de pantalla, JPEG, imágenes a color).
-
-        Retorna la ruta de la imagen preprocesada (temporal).
+        Lee la imagen, aplica CLAHE y la convierte al tensor de entrada ONNX.
+        Retorna (tensor NCHW float32, escala_x, escala_y, img_original_BGR).
         """
         img = cv2.imread(image_path)
         if img is None:
-            return image_path  # No se pudo leer, devolver original
+            raise ValueError(f"No se pudo leer la imagen: {image_path}")
 
-        # Convertir a escala de grises
+        orig_h, orig_w = img.shape[:2]
+
+        # CLAHE sobre escala de grises para mejorar contraste de radiografías
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
-        # CLAHE: mejora contraste local, clave para radiografías
         clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
         enhanced = clahe.apply(gray)
-
-        # Normalizar intensidad al rango 0-255
         enhanced = cv2.normalize(enhanced, None, 0, 255, cv2.NORM_MINMAX)
-
-        # Volver a BGR para que YOLO lo procese correctamente
         bgr = cv2.cvtColor(enhanced, cv2.COLOR_GRAY2BGR)
 
-        # Guardar en archivo temporal junto a la imagen original
-        tmp_path = str(Path(image_path).parent / f"_proc_{Path(image_path).name}")
-        cv2.imwrite(tmp_path, bgr)
-        return tmp_path
+        # Resize a 640×640 manteniendo aspect ratio con letterbox
+        scale = self.INPUT_SIZE / max(orig_h, orig_w)
+        new_w = int(orig_w * scale)
+        new_h = int(orig_h * scale)
+        resized = cv2.resize(bgr, (new_w, new_h))
 
-    def _ensure_loaded(self):
-        """Carga el modelo si aún no está cargado (lazy loading para producción)."""
-        if self._model is None:
-            self._load_model()
+        # Pad hasta 640×640 con gris (114)
+        canvas = np.full((self.INPUT_SIZE, self.INPUT_SIZE, 3), 114, dtype=np.uint8)
+        pad_top  = (self.INPUT_SIZE - new_h) // 2
+        pad_left = (self.INPUT_SIZE - new_w) // 2
+        canvas[pad_top:pad_top + new_h, pad_left:pad_left + new_w] = resized
+
+        # BGR → RGB → NCHW float32 normalizado [0, 1]
+        rgb = cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
+        tensor = np.transpose(rgb, (2, 0, 1))[np.newaxis]  # (1, 3, 640, 640)
+
+        return tensor, scale, pad_top, pad_left, orig_h, orig_w, img
+
+    # ── NMS ────────────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _nms(boxes, scores, iou_thr=0.45):
+        """Non-Maximum Suppression puramente numpy."""
+        if len(boxes) == 0:
+            return []
+        x1, y1, x2, y2 = boxes[:, 0], boxes[:, 1], boxes[:, 2], boxes[:, 3]
+        areas = np.maximum(0, x2 - x1) * np.maximum(0, y2 - y1)
+        order = scores.argsort()[::-1]
+        keep = []
+        while order.size > 0:
+            i = order[0]
+            keep.append(i)
+            xx1 = np.maximum(x1[i], x1[order[1:]])
+            yy1 = np.maximum(y1[i], y1[order[1:]])
+            xx2 = np.minimum(x2[i], x2[order[1:]])
+            yy2 = np.minimum(y2[i], y2[order[1:]])
+            w = np.maximum(0, xx2 - xx1)
+            h = np.maximum(0, yy2 - yy1)
+            inter = w * h
+            union = areas[i] + areas[order[1:]] - inter
+            iou = np.where(union > 0, inter / union, 0)
+            order = order[1:][iou <= iou_thr]
+        return keep
+
+    # ── Postprocesamiento ──────────────────────────────────────────────────────
+
+    def _postprocess(self, output, conf_thr, iou_thr, scale, pad_top, pad_left, orig_h, orig_w):
+        """
+        Parsea la salida ONNX de YOLOv8.
+        Output shape: (1, 4+num_classes, 8400)
+        """
+        pred = output[0]          # (4+num_classes, 8400)
+        pred = pred.T             # (8400, 4+num_classes)
+
+        boxes_xywh = pred[:, :4]  # cx, cy, w, h en escala INPUT_SIZE
+        class_scores = pred[:, 4:]  # (8400, num_classes)
+
+        max_scores = class_scores.max(axis=1)
+        class_ids = class_scores.argmax(axis=1)
+
+        mask = max_scores >= conf_thr
+        if not mask.any():
+            return []
+
+        boxes_xywh = boxes_xywh[mask]
+        max_scores = max_scores[mask]
+        class_ids = class_ids[mask]
+
+        # cx,cy,w,h → x1,y1,x2,y2 en espacio INPUT_SIZE (con padding)
+        cx, cy, w, h = boxes_xywh[:, 0], boxes_xywh[:, 1], boxes_xywh[:, 2], boxes_xywh[:, 3]
+        x1 = cx - w / 2
+        y1 = cy - h / 2
+        x2 = cx + w / 2
+        y2 = cy + h / 2
+        boxes_xyxy = np.stack([x1, y1, x2, y2], axis=1)
+
+        # Revertir letterbox → coordenadas imagen original
+        boxes_orig = boxes_xyxy.copy()
+        boxes_orig[:, [0, 2]] = (boxes_orig[:, [0, 2]] - pad_left) / scale
+        boxes_orig[:, [1, 3]] = (boxes_orig[:, [1, 3]] - pad_top) / scale
+        boxes_orig = np.clip(boxes_orig, 0, [orig_w, orig_h, orig_w, orig_h])
+
+        # NMS por clase
+        detections = []
+        for cls_id in np.unique(class_ids):
+            idx = np.where(class_ids == cls_id)[0]
+            keep = self._nms(boxes_xyxy[idx], max_scores[idx], iou_thr)
+            for k in keep:
+                i = idx[k]
+                class_name = CLASS_NAMES.get(int(cls_id), f'class_{cls_id}')
+                bx1, by1, bx2, by2 = boxes_orig[i]
+                cx_n = float((bx1 + bx2) / 2 / orig_w)
+                cy_n = float((by1 + by2) / 2 / orig_h)
+                w_n  = float((bx2 - bx1) / orig_w)
+                h_n  = float((by2 - by1) / orig_h)
+                detections.append(Detection(
+                    class_name=class_name,
+                    confidence=float(max_scores[i]),
+                    bbox=[int(bx1), int(by1), int(bx2), int(by2)],
+                    bbox_normalized=[round(cx_n, 4), round(cy_n, 4), round(w_n, 4), round(h_n, 4)],
+                ))
+        return detections
+
+    # ── Anotación visual ───────────────────────────────────────────────────────
+
+    def _annotate(self, img, detections):
+        """Dibuja cajas de colores sobre la imagen original (solo clases patológicas)."""
+        annotated = img.copy()
+        for det in detections:
+            if det.class_name not in PATHOLOGY_CLASSES:
+                continue
+            x1, y1, x2, y2 = det.bbox
+            color = COLOR_MAP.get(det.class_name, DEFAULT_COLOR)
+            cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
+            label = f"{det.class_name} {det.confidence:.2f}"
+            (lw, lh), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
+            label_y = max(y1 - 5, lh + 5)
+            cv2.rectangle(annotated, (x1, label_y - lh - baseline), (x1 + lw, label_y + baseline), color, cv2.FILLED)
+            cv2.putText(annotated, label, (x1, label_y - baseline), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
+        return annotated
+
+    # ── Detección principal ────────────────────────────────────────────────────
 
     def detect(self, image_path: str) -> YOLOResult:
-        """
-        Ejecuta detección de fracturas sobre una imagen.
-
-        Args:
-            image_path: Ruta absoluta a la imagen de radiografía.
-
-        Returns:
-            YOLOResult con las detecciones, imagen anotada y métricas.
-        """
-        # Carga lazy: el modelo se carga en la primera petición, no al importar.
-        # Esto evita OOM en Render free tier (512 MB) durante el arranque de Gunicorn.
         self._ensure_loaded()
-
         result = YOLOResult(original_image_path=image_path)
 
-        if not self.is_available:
-            result.error = 'El modelo YOLO no está disponible. Entrene el modelo primero.'
+        if not self._session:
+            result.error = 'Modelo ONNX no disponible.'
             return result
 
-        preprocessed_path = None
         try:
-            start_time = time.time()
+            start = time.time()
+            conf_thr = float(getattr(settings, 'YOLO_CONFIDENCE_THRESHOLD', 0.50))
+            iou_thr  = float(getattr(settings, 'YOLO_IOU_THRESHOLD', 0.45))
 
-            # Preprocesar imagen (CLAHE + escala de grises)
-            preprocessed_path = self._preprocess_image(image_path)
+            tensor, scale, pad_top, pad_left, orig_h, orig_w, orig_img = self._preprocess(image_path)
 
-            # Ejecutar predicción sobre imagen preprocesada
-            predictions = self._model.predict(
-                source=preprocessed_path,
-                conf=settings.YOLO_CONFIDENCE_THRESHOLD,
-                iou=settings.YOLO_IOU_THRESHOLD,
-                imgsz=settings.YOLO_IMAGE_SIZE,
-                verbose=False,
+            input_name = self._session.get_inputs()[0].name
+            outputs = self._session.run(None, {input_name: tensor})
+
+            result.inference_time_ms = (time.time() - start) * 1000
+
+            detections = self._postprocess(
+                outputs[0], conf_thr, iou_thr,
+                scale, pad_top, pad_left, orig_h, orig_w
             )
+            result.detections = detections
 
-            result.inference_time_ms = (time.time() - start_time) * 1000
+            pathology = [d for d in detections if d.class_name in PATHOLOGY_CLASSES]
+            result.fracture_detected = len(pathology) > 0
+            if pathology:
+                result.max_confidence = max(d.confidence for d in pathology)
 
-            pred = predictions[0]
-
-            # Parsear dimensiones de la imagen original (no la preprocesada)
-            img = cv2.imread(image_path)
-            img_h, img_w = img.shape[:2] if img is not None else (640, 640)
-
-            for box in pred.boxes:
-                cls_id = int(box.cls[0])
-                conf = float(box.conf[0])
-                x1, y1, x2, y2 = box.xyxy[0].tolist()
-
-                detection = Detection(
-                    class_name=self._model.names[cls_id],
-                    confidence=conf,
-                    bbox=[round(x1), round(y1), round(x2), round(y2)],
-                    bbox_normalized=[
-                        round((x1 + x2) / 2 / img_w, 4),
-                        round((y1 + y2) / 2 / img_h, 4),
-                        round((x2 - x1) / img_w, 4),
-                        round((y2 - y1) / img_h, 4),
-                    ]
-                )
-                result.detections.append(detection)
-
-            # ── Determinar si hay fractura ──────────────────────────────────
-            # Solo se considera fractura si hay detección de clase PATOLÓGICA.
-            # La clase "text" son marcadores radiográficos (L, R, fecha),
-            # no constituyen un hallazgo médico.
-            pathology_detections = [
-                d for d in result.detections if d.class_name in PATHOLOGY_CLASSES
-            ]
-            result.fracture_detected = len(pathology_detections) > 0
-            if pathology_detections:
-                result.max_confidence = max(d.confidence for d in pathology_detections)
-
-            # ── Generar imagen anotada SOLO con hallazgos patológicos ─────────
-            # Se usa la imagen ORIGINAL (no preprocesada) para mejor calidad visual.
-            # Se dibujan manualmente solo las cajas de PATHOLOGY_CLASSES,
-            # omitiendo los marcadores radiográficos ("text").
-            annotated_img = cv2.imread(image_path)
-            if annotated_img is None:
-                annotated_img = pred.plot()  # fallback si no se puede leer
-            else:
-                # Paleta de colores por clase (BGR)
-                COLOR_MAP = {
-                    'fracture':          (0, 255, 255),   # Cyan
-                    'boneanomaly':       (0, 165, 255),   # Naranja
-                    'bonelesion':        (0, 0, 255),     # Rojo
-                    'foreignbody':       (255, 0, 255),   # Magenta
-                    'metal':             (128, 128, 128), # Gris
-                    'periostealreaction':(255, 255, 0),   # Amarillo
-                    'pronationsign':     (255, 128, 0),   # Azul claro
-                    'softtissue':        (0, 255, 128),   # Verde claro
-                }
-                DEFAULT_COLOR = (0, 255, 255)
-
-                for box in pred.boxes:
-                    cls_id = int(box.cls[0])
-                    class_name = self._model.names[cls_id]
-
-                    # Omitir marcadores de texto radiográfico
-                    if class_name not in PATHOLOGY_CLASSES:
-                        continue
-
-                    conf = float(box.conf[0])
-                    x1, y1, x2, y2 = [int(v) for v in box.xyxy[0].tolist()]
-                    color = COLOR_MAP.get(class_name, DEFAULT_COLOR)
-
-                    # Rectángulo con grosor 2
-                    cv2.rectangle(annotated_img, (x1, y1), (x2, y2), color, 2)
-
-                    # Etiqueta con fondo sólido para legibilidad
-                    label = f"{class_name} {conf:.2f}"
-                    (lw, lh), baseline = cv2.getTextSize(
-                        label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2
-                    )
-                    label_y = max(y1 - 5, lh + 5)
-                    cv2.rectangle(
-                        annotated_img,
-                        (x1, label_y - lh - baseline),
-                        (x1 + lw, label_y + baseline),
-                        color, cv2.FILLED
-                    )
-                    cv2.putText(
-                        annotated_img, label,
-                        (x1, label_y - baseline),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2
-                    )
-
+            annotated = self._annotate(orig_img, detections)
             results_dir = Path(settings.MEDIA_ROOT) / 'results'
             results_dir.mkdir(parents=True, exist_ok=True)
-
-            annotated_filename = f"annotated_{Path(image_path).name}"
-            annotated_path = results_dir / annotated_filename
-            cv2.imwrite(str(annotated_path), annotated_img)
+            annotated_path = results_dir / f"annotated_{Path(image_path).name}"
+            cv2.imwrite(str(annotated_path), annotated)
             result.annotated_image_path = str(annotated_path)
 
             logger.info(
-                f"Detección completada: {len(result.detections)} hallazgos "
-                f"({len(pathology_detections)} patológicos), "
-                f"{result.inference_time_ms:.1f}ms"
+                f"Detección ONNX: {len(detections)} total, "
+                f"{len(pathology)} patológicos, {result.inference_time_ms:.1f}ms"
             )
 
         except Exception as e:
-            logger.error(f"Error en detección YOLO: {e}", exc_info=True)
+            logger.error(f"Error en detección ONNX: {e}", exc_info=True)
             result.error = str(e)
-
-        finally:
-            # Limpiar imagen temporal preprocesada
-            if preprocessed_path and preprocessed_path != image_path:
-                try:
-                    Path(preprocessed_path).unlink(missing_ok=True)
-                except Exception:
-                    pass
 
         return result
 
 
-# Instancia singleton — se crea al importar el módulo
+# Singleton — carga lazy en primera llamada a detect()
 yolo_service = YOLOService()

@@ -6,8 +6,8 @@ services:
     pythonVersion: "3.11.9"
     buildCommand: |
       pip install -r requirements.txt
-      mkdir -p ml/models
-      curl -L -o ml/models/best.pt https://github.com/BackSua/FRACTURAS-IA/releases/download/v1.0/best.pt
+      mkdir -p ml/models staticfiles
+      curl -L -o ml/models/best.onnx https://github.com/BackSua/FRACTURAS-IA/releases/download/v1.0/best.onnx
       DJANGO_SETTINGS_MODULE=fracture_ai.settings_prod python manage.py collectstatic --noinput
       DJANGO_SETTINGS_MODULE=fracture_ai.settings_prod python manage.py migrate
     startCommand: gunicorn fracture_ai.wsgi:application --workers 1 --timeout 120 --bind 0.0.0.0:$PORT

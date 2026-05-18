@@ -154,7 +154,8 @@ LOGGING = {
 
 
 # --- CONFIGURACIÓN DEL MODELO YOLO ---
-YOLO_MODEL_PATH = BASE_DIR / 'ml' / 'models' / 'best.pt'
+YOLO_MODEL_PATH = BASE_DIR / 'ml' / 'models' / 'best.pt'  # local (desarrollo)
+YOLO_ONNX_PATH  = BASE_DIR / 'ml' / 'models' / 'best.onnx'
 YOLO_CONFIDENCE_THRESHOLD = 0.50
 YOLO_IOU_THRESHOLD = 0.45
 YOLO_IMAGE_SIZE = 640

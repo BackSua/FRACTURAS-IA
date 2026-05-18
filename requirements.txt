@@ -1,7 +1,5 @@
-# ── PyTorch CPU-only (evita descargar variante CUDA de ~2 GB en Render) ──────
---extra-index-url https://download.pytorch.org/whl/cpu
-torch==2.6.0+cpu
-torchvision==0.21.0+cpu
+# ── Inferencia ONNX Runtime (sin PyTorch — usa ~250 MB RAM vs 650 MB) ─────────
+onnxruntime-cpu>=1.18
 
 # ── Framework y servidor ───────────────────────────────────────────────────
 django>=4.2,<5.0
@@ -9,8 +7,7 @@ gunicorn
 whitenoise
 python-dotenv
 
-# ── Modelo de IA (inferencia únicamente) ───────────────────────────────────
-ultralytics>=8.0
+# ── Procesamiento de imagen ────────────────────────────────────────────────
 opencv-python-headless
 Pillow
 numpy
