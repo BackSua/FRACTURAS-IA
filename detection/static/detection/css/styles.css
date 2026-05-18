@@ -1,0 +1,153 @@
+/*
+ * Estilos de FractureAI
+ * Diseño limpio, profesional y médico.
+ * Colores: azul oscuro (#1a5276) para acentos, rojo (#e74c3c) para alertas,
+ * verde (#27ae60) para estado normal, fondo blanco/gris claro.
+ */
+
+:root {
+    --primary: #1a5276;
+    --primary-light: #2471a3;
+    --danger: #e74c3c;
+    --success: #27ae60;
+    --bg-light: #f8f9fa;
+    --text-dark: #2c3e50;
+}
+
+body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background-color: var(--bg-light);
+    color: var(--text-dark);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+main {
+    flex: 1;
+}
+
+/* --- Navbar --- */
+.bg-primary-custom {
+    background-color: var(--primary) !important;
+}
+
+.navbar-brand {
+    font-size: 1.3rem;
+}
+
+/* --- Botones --- */
+.btn-primary-custom {
+    background-color: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+}
+
+.btn-primary-custom:hover {
+    background-color: var(--primary-light);
+    border-color: var(--primary-light);
+    color: #fff;
+}
+
+.btn-primary-custom:disabled {
+    background-color: #95a5a6;
+    border-color: #95a5a6;
+}
+
+/* --- Zona de carga de imagen --- */
+.upload-zone {
+    border: 2px dashed #bdc3c7;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.upload-zone:hover {
+    border-color: var(--primary);
+    background-color: rgba(26, 82, 118, 0.03);
+}
+
+.upload-zone.drag-over {
+    border-color: var(--primary);
+    background-color: rgba(26, 82, 118, 0.08);
+    border-style: solid;
+}
+
+.upload-zone input[type="file"] {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+}
+
+/* --- Cards --- */
+.card {
+    border: none;
+    border-radius: 10px;
+}
+
+.card-header {
+    border-radius: 10px 10px 0 0 !important;
+    background-color: #fff;
+    border-bottom: 1px solid #e9ecef;
+}
+
+.card-header.bg-primary-custom {
+    color: #fff;
+}
+
+/* --- Métricas del dashboard --- */
+.metric-card {
+    transition: transform 0.2s ease;
+}
+
+.metric-card:hover {
+    transform: translateY(-3px);
+}
+
+.metric-card h2 {
+    font-size: 2rem;
+    font-weight: 700;
+}
+
+/* --- Interpretación LLM --- */
+.llm-interpretation {
+    background-color: #f0f4f8;
+    border-left: 4px solid var(--primary);
+    padding: 1rem 1.25rem;
+    border-radius: 0 8px 8px 0;
+    font-size: 0.95rem;
+    line-height: 1.6;
+    white-space: pre-wrap;
+}
+
+/* --- Footer --- */
+.footer-custom {
+    background-color: #ecf0f1;
+    border-top: 1px solid #dee2e6;
+}
+
+/* --- Progress bars en detecciones --- */
+.progress {
+    border-radius: 10px;
+}
+
+/* --- Responsive --- */
+@media (max-width: 768px) {
+    .metric-card h2 {
+        font-size: 1.5rem;
+    }
+
+    .upload-zone-content {
+        padding: 2rem 1rem !important;
+    }
+
+    .upload-zone-content .display-1 {
+        font-size: 3rem !important;
+    }
+}

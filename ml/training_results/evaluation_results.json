@@ -1,0 +1,51 @@
+{
+  "model": "best.pt",
+  "dataset": "C:\\FRACTURAS -IA\\ml\\configs\\data.yaml",
+  "evaluation_time_seconds": 120.26,
+  "metrics": {
+    "mAP50": 0.3831,
+    "mAP50_95": 0.2345,
+    "precision": 0.6004,
+    "recall": 0.3985,
+    "f1_score": 0.479
+  },
+  "per_class": {
+    "boneanomaly": {
+      "ap50": 0.0,
+      "ap50_95": 0.0
+    },
+    "bonelesion": {
+      "ap50": 0.165,
+      "ap50_95": 0.1155
+    },
+    "foreignbody": {
+      "ap50": 0.6753,
+      "ap50_95": 0.2574
+    },
+    "fracture": {
+      "ap50": 0.9502,
+      "ap50_95": 0.7036
+    },
+    "metal": {
+      "ap50": 0.2836,
+      "ap50_95": 0.1162
+    },
+    "periostealreaction": {
+      "ap50": 0.0,
+      "ap50_95": 0.0
+    },
+    "pronatorsign": {
+      "ap50": 0.0281,
+      "ap50_95": 0.0158
+    },
+    "softtissue": {
+      "ap50": 0.9628,
+      "ap50_95": 0.6675
+    }
+  },
+  "config": {
+    "confidence_threshold": 0.5,
+    "iou_threshold": 0.45,
+    "image_size": 640
+  }
+}

@@ -1,0 +1,175 @@
+{% extends "detection/base.html" %}
+{% load static %}
+
+{% block title %}Subir Radiografía — FractureAI{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card shadow-sm">
+            <div class="card-header bg-primary-custom text-white">
+                <h4 class="mb-0">
+                    <i class="bi bi-upload me-2"></i>Analizar Radiografía
+                </h4>
+            </div>
+            <div class="card-body p-4">
+
+                {% if not model_available %}
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    <strong>Modelo no disponible.</strong>
+                    El modelo YOLO no se ha cargado. Entrene el modelo ejecutando
+                    <code>python ml/train.py</code> y copie <code>best.pt</code> a <code>ml/models/</code>.
+                </div>
+                {% endif %}
+
+                {% if error %}
+                <div class="alert alert-danger">
+                    <i class="bi bi-x-circle me-2"></i>{{ error }}
+                </div>
+                {% endif %}
+
+                <form method="post" enctype="multipart/form-data" id="upload-form">
+                    {% csrf_token %}
+
+                    <!-- Zona de carga de imagen -->
+                    <div class="upload-zone mb-4" id="drop-zone">
+                        <div class="upload-zone-content text-center py-5" id="upload-placeholder">
+                            <i class="bi bi-cloud-arrow-up display-1 text-muted"></i>
+                            <p class="mt-3 mb-1 text-muted">
+                                Arrastra una radiografía aquí o haz clic para seleccionar
+                            </p>
+                            <p class="small text-muted">JPEG o PNG, máximo 10MB</p>
+                        </div>
+                        <!-- Preview de imagen -->
+                        <div id="image-preview" class="text-center d-none">
+                            <img id="preview-img" src="" alt="Preview" class="img-fluid rounded" style="max-height: 400px;">
+                            <p class="mt-2 text-muted small" id="file-info"></p>
+                        </div>
+                        {{ form.image }}
+                    </div>
+
+                    {% if form.image.errors %}
+                    <div class="text-danger small mb-3">
+                        {% for error in form.image.errors %}
+                        <p>{{ error }}</p>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+
+                    <!-- Campos opcionales -->
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="{{ form.patient_id.id_for_label }}" class="form-label">
+                                {{ form.patient_id.label }}
+                            </label>
+                            {{ form.patient_id }}
+                        </div>
+                        <div class="col-md-6">
+                            <label for="{{ form.notes.id_for_label }}" class="form-label">
+                                {{ form.notes.label }}
+                            </label>
+                            {{ form.notes }}
+                        </div>
+                    </div>
+
+                    <!-- Botón de envío -->
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary-custom btn-lg" id="submit-btn"
+                                {% if not model_available %}disabled{% endif %}>
+                            <span id="btn-text">
+                                <i class="bi bi-search me-2"></i>Analizar Radiografía
+                            </span>
+                            <span id="btn-loading" class="d-none">
+                                <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                                Procesando...
+                            </span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Info del sistema -->
+        <div class="card mt-4 shadow-sm">
+            <div class="card-body">
+                <h6 class="card-title"><i class="bi bi-info-circle me-2"></i>Acerca del sistema</h6>
+                <ul class="small text-muted mb-0">
+                    <li>Modelo: YOLOv8 entrenado con dataset GRAZPEDWRI-DX</li>
+                    <li>Detecta fracturas en radiografías de mano y muñeca</li>
+                    <li>Genera interpretación con IA (si el servicio LLM está activo)</li>
+                    <li>Tiempo de análisis estimado: 1-5 segundos</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Preview de imagen antes de enviar
+    const fileInput = document.getElementById('xray-input');
+    const dropZone = document.getElementById('drop-zone');
+    const placeholder = document.getElementById('upload-placeholder');
+    const previewDiv = document.getElementById('image-preview');
+    const previewImg = document.getElementById('preview-img');
+    const fileInfo = document.getElementById('file-info');
+    const form = document.getElementById('upload-form');
+    const btnText = document.getElementById('btn-text');
+    const btnLoading = document.getElementById('btn-loading');
+    const submitBtn = document.getElementById('submit-btn');
+
+    // Click en la zona de carga abre el selector de archivo
+    dropZone.addEventListener('click', function(e) {
+        if (e.target !== fileInput) {
+            fileInput.click();
+        }
+    });
+
+    // Preview al seleccionar archivo
+    fileInput.addEventListener('change', function() {
+        if (this.files && this.files[0]) {
+            showPreview(this.files[0]);
+        }
+    });
+
+    // Drag & Drop
+    dropZone.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        this.classList.add('drag-over');
+    });
+
+    dropZone.addEventListener('dragleave', function() {
+        this.classList.remove('drag-over');
+    });
+
+    dropZone.addEventListener('drop', function(e) {
+        e.preventDefault();
+        this.classList.remove('drag-over');
+        if (e.dataTransfer.files.length > 0) {
+            fileInput.files = e.dataTransfer.files;
+            showPreview(e.dataTransfer.files[0]);
+        }
+    });
+
+    function showPreview(file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            previewImg.src = e.target.result;
+            placeholder.classList.add('d-none');
+            previewDiv.classList.remove('d-none');
+            const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
+            fileInfo.textContent = file.name + ' (' + sizeMB + ' MB)';
+        };
+        reader.readAsDataURL(file);
+    }
+
+    // Spinner al enviar
+    form.addEventListener('submit', function() {
+        btnText.classList.add('d-none');
+        btnLoading.classList.remove('d-none');
+        submitBtn.disabled = true;
+    });
+</script>
+{% endblock %}

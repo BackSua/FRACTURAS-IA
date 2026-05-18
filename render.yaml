@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: fractureai
+    runtime: python
+    buildCommand: |
+      pip install -r requirements.txt
+      python scripts/download_model.py
+      python manage.py collectstatic --noinput
+      python manage.py migrate
+    startCommand: gunicorn fracture_ai.wsgi:application --workers 2 --timeout 120
+    envVars:
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DEBUG
+        value: "False"
+      - key: DJANGO_SETTINGS_MODULE
+        value: fracture_ai.settings_prod
+      - key: PYTHON_VERSION
+        value: "3.11.9"

@@ -1,0 +1,45 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Django
+db.sqlite3
+media/
+staticfiles/
+
+# Environment
+.env
+
+# Dataset (too large for Git)
+dataset/
+
+# YOLO training runs
+runs/
+
+# Model weights — tracked via Git LFS (no ignorar)
+# ml/models/*.pt  ← comentado: se sube con LFS
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Base model weights en ra�z (no necesarios en repo)
+yolov8m.pt
+yolo26n.pt
+
+# Claude Code internal settings
+.claude/

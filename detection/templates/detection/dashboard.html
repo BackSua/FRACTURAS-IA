@@ -1,0 +1,162 @@
+{% extends "detection/base.html" %}
+{% load static %}
+
+{% block title %}Dashboard — FractureAI{% endblock %}
+
+{% block content %}
+<h3 class="mb-4"><i class="bi bi-bar-chart me-2"></i>Dashboard del Modelo</h3>
+
+{% if not has_training_data and not has_eval_data %}
+<div class="alert alert-info">
+    <i class="bi bi-info-circle me-2"></i>
+    <strong>Sin datos de entrenamiento.</strong>
+    Entrene el modelo ejecutando <code>python ml/train.py</code> y
+    <code>python ml/evaluate.py</code> para generar los datos de las gráficas.
+</div>
+{% endif %}
+
+<!-- Tarjetas de métricas clave -->
+{% if has_eval_data %}
+<div class="row mb-4" id="metrics-cards">
+    <div class="col-md-3 col-6 mb-3">
+        <div class="card shadow-sm text-center metric-card">
+            <div class="card-body">
+                <h6 class="text-muted">mAP@50</h6>
+                <h2 class="text-primary mb-0" id="metric-map50">—</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-6 mb-3">
+        <div class="card shadow-sm text-center metric-card">
+            <div class="card-body">
+                <h6 class="text-muted">Precision</h6>
+                <h2 class="text-success mb-0" id="metric-precision">—</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-6 mb-3">
+        <div class="card shadow-sm text-center metric-card">
+            <div class="card-body">
+                <h6 class="text-muted">Recall</h6>
+                <h2 class="text-warning mb-0" id="metric-recall">—</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-6 mb-3">
+        <div class="card shadow-sm text-center metric-card">
+            <div class="card-body">
+                <h6 class="text-muted">F1-Score</h6>
+                <h2 class="text-info mb-0" id="metric-f1">—</h2>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Gráficas -->
+<div class="row">
+    <!-- Gráfica 1: Curvas de Loss por Época -->
+    <div class="col-lg-6 mb-4">
+        <div class="card shadow-sm">
+            <div class="card-header">
+                <h6 class="mb-0">
+                    <i class="bi bi-graph-down me-2"></i>Curvas de Entrenamiento (Loss)
+                </h6>
+            </div>
+            <div class="card-body">
+                <canvas id="lossChart" height="300"></canvas>
+                <p class="small text-muted mt-2 mb-0">
+                    Si la curva de validation loss sube mientras train loss baja, hay overfitting.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Gráfica 2: Métricas por Época -->
+    <div class="col-lg-6 mb-4">
+        <div class="card shadow-sm">
+            <div class="card-header">
+                <h6 class="mb-0">
+                    <i class="bi bi-graph-up me-2"></i>Métricas por Época
+                </h6>
+            </div>
+            <div class="card-body">
+                <canvas id="metricsChart" height="300"></canvas>
+                <p class="small text-muted mt-2 mb-0">
+                    Evolución de precisión, recall y mAP durante el entrenamiento.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Gráfica 3: Métricas Finales del Modelo -->
+    <div class="col-lg-6 mb-4">
+        <div class="card shadow-sm">
+            <div class="card-header">
+                <h6 class="mb-0">
+                    <i class="bi bi-bar-chart-fill me-2"></i>Métricas Finales del Modelo
+                </h6>
+            </div>
+            <div class="card-body">
+                <canvas id="finalMetricsChart" height="300"></canvas>
+                <p class="small text-muted mt-2 mb-0">
+                    Rendimiento final evaluado sobre el conjunto de test (datos nunca vistos).
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Info de hiperparámetros -->
+    <div class="col-lg-6 mb-4">
+        <div class="card shadow-sm">
+            <div class="card-header">
+                <h6 class="mb-0">
+                    <i class="bi bi-gear me-2"></i>Hiperparámetros del Entrenamiento
+                </h6>
+            </div>
+            <div class="card-body">
+                {% if args_data %}
+                <div class="table-responsive">
+                    <table class="table table-sm table-striped">
+                        <thead>
+                            <tr><th>Parámetro</th><th>Valor</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for key, value in args_data.items %}
+                            <tr><td class="text-muted">{{ key }}</td><td><code>{{ value }}</code></td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-muted mb-0">
+                    Los hiperparámetros se mostrarán después de entrenar el modelo.
+                    Ejecute <code>python ml/train.py</code>.
+                </p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'detection/js/charts.js' %}"></script>
+<script>
+    // Datos del backend embebidos como JSON en el template
+    // Chart.js los usa para renderizar las gráficas en el navegador del usuario
+    const trainingData = JSON.parse('{{ training_data_json|escapejs }}');
+    const evalData = JSON.parse('{{ eval_data_json|escapejs }}');
+
+    // Inicializar gráficas
+    if (trainingData && trainingData.epochs && trainingData.epochs.length > 0) {
+        initLossChart(trainingData);
+        initMetricsChart(trainingData);
+    }
+
+    if (evalData && evalData.metrics) {
+        initFinalMetricsChart(evalData);
+        updateMetricCards(evalData);
+    }
+</script>
+{% endblock %}
