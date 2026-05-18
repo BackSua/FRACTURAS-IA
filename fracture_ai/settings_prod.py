@@ -22,7 +22,10 @@ ALLOWED_HOSTS += ['localhost', '127.0.0.1', 'fracturas-ia.onrender.com', '.onren
 MIDDLEWARE.insert(1, 'whitenoise.middleware.WhiteNoiseMiddleware')
 STORAGES = {
     'staticfiles': {
-        'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
+        # CompressedStaticFilesStorage: comprime archivos pero NO usa manifest.
+        # Evita el 500 que ocurre cuando collectstatic corre sin settings_prod
+        # y el manifest (staticfiles.json) no existe en runtime.
+        'BACKEND': 'whitenoise.storage.CompressedStaticFilesStorage',
     },
 }
 
