@@ -1,10 +1,17 @@
-django>=4.2
+# ── PyTorch CPU-only (evita descargar variante CUDA de ~2 GB en Render) ──────
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.6.0+cpu
+torchvision==0.21.0+cpu
+
+# ── Framework y servidor ───────────────────────────────────────────────────
+django>=4.2,<5.0
 gunicorn
-ultralytics
+whitenoise
+python-dotenv
+
+# ── Modelo de IA (inferencia únicamente — sin albumentations) ──────────────
+ultralytics>=8.0
 opencv-python-headless
 Pillow
-albumentations
 numpy
 requests
-python-dotenv
-whitenoise
