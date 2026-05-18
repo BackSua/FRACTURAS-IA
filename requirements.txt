@@ -1,5 +1,5 @@
 # ── Inferencia ONNX Runtime (sin PyTorch — usa ~250 MB RAM vs 650 MB) ─────────
-onnxruntime-cpu>=1.18
+onnxruntime>=1.18
 
 # ── Framework y servidor ───────────────────────────────────────────────────
 django>=4.2,<5.0
