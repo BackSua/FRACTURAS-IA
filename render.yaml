@@ -3,6 +3,7 @@ services:
     name: fractureai
     runtime: python
     plan: free
+    pythonVersion: "3.11.9"
     buildCommand: |
       pip install -r requirements.txt
       python manage.py collectstatic --noinput
@@ -17,8 +18,6 @@ services:
         value: fracture_ai.settings_prod
       - key: ALLOWED_HOSTS
         value: ".onrender.com"
-      - key: PYTHON_VERSION
-        value: "3.11.9"
       - key: PYTHONDONTWRITEBYTECODE
         value: "1"
       - key: PYTHONUNBUFFERED
