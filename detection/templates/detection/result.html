@@ -1,0 +1,208 @@
+{% extends "detection/base.html" %}
+{% load static %}
+
+{% block title %}Resultado del Análisis — FractureAI{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Header del resultado -->
+    <div class="col-12 mb-4">
+        {% if result.error %}
+        <div class="alert alert-warning">
+            <i class="bi bi-exclamation-triangle me-2"></i>{{ result.error }}
+        </div>
+        {% endif %}
+
+        <div class="d-flex justify-content-between align-items-center flex-wrap">
+            <div>
+                <h3 class="mb-1">Resultado del Análisis</h3>
+                {% if result.patient_id %}
+                <p class="text-muted mb-0">Paciente: {{ result.patient_id }}</p>
+                {% endif %}
+            </div>
+            <div>
+                {% if result.fracture_detected %}
+                <span class="badge bg-danger fs-6 px-3 py-2">
+                    <i class="bi bi-exclamation-triangle me-1"></i>
+                    Fractura Detectada — {{ result.max_confidence }}%
+                </span>
+                {% else %}
+                <span class="badge bg-success fs-6 px-3 py-2">
+                    <i class="bi bi-check-circle me-1"></i>
+                    Sin Fracturas Detectadas
+                </span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Imágenes: Original vs Anotada -->
+    <div class="col-md-6 mb-4">
+        <div class="card shadow-sm h-100">
+            <div class="card-header">
+                <h6 class="mb-0"><i class="bi bi-image me-2"></i>Imagen Original</h6>
+            </div>
+            <div class="card-body text-center">
+                {% if result.original_image_url %}
+                <img src="{{ result.original_image_url }}" alt="Radiografía original"
+                     class="img-fluid rounded" style="max-height: 500px;">
+                {% else %}
+                <p class="text-muted">Imagen no disponible</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6 mb-4">
+        <div class="card shadow-sm h-100">
+            <div class="card-header">
+                <h6 class="mb-0"><i class="bi bi-bounding-box me-2"></i>Detecciones</h6>
+            </div>
+            <div class="card-body text-center">
+                {% if result.annotated_image_url %}
+                <img src="{{ result.annotated_image_url }}" alt="Radiografía con detecciones"
+                     class="img-fluid rounded" style="max-height: 500px;">
+                {% else %}
+                <p class="text-muted">Imagen anotada no disponible</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Detecciones detalladas -->
+    <div class="col-md-6 mb-4">
+        <div class="card shadow-sm">
+            <div class="card-header">
+                <h6 class="mb-0"><i class="bi bi-list-check me-2"></i>Detecciones ({{ result.num_detections }})</h6>
+            </div>
+            <div class="card-body">
+                {% if result.detections %}
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Clase</th>
+                                <th>Confianza</th>
+                                <th>Ubicación (bbox)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for det in result.detections %}
+                            <tr>
+                                <td>{{ forloop.counter }}</td>
+                                <td>
+                                    <span class="badge bg-danger">{{ det.class_name }}</span>
+                                </td>
+                                <td>
+                                    <div class="d-flex align-items-center">
+                                        <div class="progress flex-grow-1 me-2" style="height: 8px;">
+                                            <div class="progress-bar {% if det.confidence >= 80 %}bg-danger{% elif det.confidence >= 60 %}bg-warning{% else %}bg-info{% endif %}"
+                                                 style="width: {{ det.confidence }}%"></div>
+                                        </div>
+                                        <span class="small fw-bold">{{ det.confidence }}%</span>
+                                    </div>
+                                </td>
+                                <td class="small text-muted">
+                                    ({{ det.bbox.0 }}, {{ det.bbox.1 }}) — ({{ det.bbox.2 }}, {{ det.bbox.3 }})
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-muted mb-0">
+                    <i class="bi bi-check-circle text-success me-2"></i>
+                    No se detectaron fracturas en la imagen analizada.
+                </p>
+                {% endif %}
+
+                <!-- Tiempos de procesamiento -->
+                <hr>
+                <div class="row text-center small text-muted">
+                    <div class="col">
+                        <i class="bi bi-cpu me-1"></i>
+                        YOLO: {{ result.inference_time_ms }} ms
+                    </div>
+                    <div class="col">
+                        <i class="bi bi-chat-dots me-1"></i>
+                        LLM: {{ result.llm_time_ms }} ms
+                    </div>
+                    <div class="col">
+                        <i class="bi bi-robot me-1"></i>
+                        Fuente: {{ result.llm_source }}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Interpretación LLM -->
+    <div class="col-md-6 mb-4">
+        <div class="card shadow-sm">
+            <div class="card-header">
+                <h6 class="mb-0">
+                    <i class="bi bi-chat-square-text me-2"></i>Interpretación
+                    {% if result.llm_source == 'llm' %}
+                    <span class="badge bg-info ms-2">{{ result.llm_model }}</span>
+                    {% else %}
+                    <span class="badge bg-secondary ms-2">Respuesta automática</span>
+                    {% endif %}
+                </h6>
+            </div>
+            <div class="card-body p-3">
+                {{ result.llm_interpretation|safe }}
+            </div>
+        </div>
+    </div>
+
+    <!-- Notas del médico -->
+    {% if result.notes %}
+    <div class="col-12 mb-4">
+        <div class="card shadow-sm">
+            <div class="card-header">
+                <h6 class="mb-0"><i class="bi bi-journal-text me-2"></i>Notas Clínicas</h6>
+            </div>
+            <div class="card-body">
+                <p class="mb-0">{{ result.notes }}</p>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Acciones -->
+    <div class="col-12">
+        <div class="d-flex gap-3 justify-content-center">
+            <a href="{% url 'detection:upload' %}" class="btn btn-primary-custom btn-lg">
+                <i class="bi bi-plus-circle me-2"></i>Nueva Radiografía
+            </a>
+            <a href="{% url 'detection:dashboard' %}" class="btn btn-outline-secondary btn-lg">
+                <i class="bi bi-bar-chart me-2"></i>Ver Dashboard
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ── Medical Report Styles ─────────────────────────── */
+.medical-report { font-size: .875rem; line-height: 1.6; }
+.report-header { border-bottom: 2px solid #0d6efd; padding-bottom: .6rem; }
+.report-section-title {
+    display: flex; align-items: center; gap: .5rem;
+    font-weight: 700; font-size: .8rem; text-transform: uppercase;
+    letter-spacing: .06em; color: #495057; margin-bottom: .6rem;
+}
+.section-num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 1.4rem; height: 1.4rem; border-radius: 50%;
+    background: #0d6efd; color: #fff; font-size: .7rem;
+    font-weight: 700; flex-shrink: 0;
+}
+.finding-card { background: #f8f9fa; transition: box-shadow .15s; }
+.finding-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,.1); }
+.stat-box { background: #f8f9fa; }
+</style>
+{% endblock %}

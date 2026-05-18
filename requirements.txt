@@ -1,0 +1,10 @@
+django>=4.2
+gunicorn
+ultralytics
+opencv-python-headless
+Pillow
+albumentations
+numpy
+requests
+python-dotenv
+whitenoise
