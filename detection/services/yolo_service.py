@@ -83,8 +83,10 @@ class YOLOService:
 
     @property
     def is_available(self) -> bool:
-        """Indica si el modelo está cargado y listo."""
-        return self._model is not None
+        """Indica si el modelo está disponible (archivo existe o ya cargado)."""
+        if self._model is not None:
+            return True
+        return Path(self._model_path).exists()
 
     def _preprocess_image(self, image_path: str) -> str:
         """
