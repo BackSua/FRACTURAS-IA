@@ -5,10 +5,16 @@ Hereda de settings.py y sobreescribe lo necesario para un entorno
 seguro sin interfaz gráfica. Equivalente a application-prod.properties en Spring.
 """
 
+import os
 from .settings import *  # noqa: F401,F403
 
 DEBUG = False
-ALLOWED_HOSTS = ['.onrender.com']
+
+# Render asigna un subdominio único (fractureai.onrender.com).
+# Acepta cualquier subdominio de onrender.com + localhost para health checks.
+_allowed = os.getenv('ALLOWED_HOSTS', '.onrender.com')
+ALLOWED_HOSTS = [h.strip() for h in _allowed.split(',')]
+ALLOWED_HOSTS += ['localhost', '127.0.0.1']
 
 # WhiteNoise sirve archivos estáticos sin necesidad de Nginx
 # Se inserta justo después de SecurityMiddleware

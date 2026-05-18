@@ -2,12 +2,12 @@ services:
   - type: web
     name: fractureai
     runtime: python
+    plan: free
     buildCommand: |
       pip install -r requirements.txt
-      python scripts/download_model.py
       python manage.py collectstatic --noinput
       python manage.py migrate
-    startCommand: gunicorn fracture_ai.wsgi:application --workers 2 --timeout 120
+    startCommand: gunicorn fracture_ai.wsgi:application --workers 1 --timeout 120 --bind 0.0.0.0:$PORT
     envVars:
       - key: DJANGO_SECRET_KEY
         generateValue: true
@@ -15,5 +15,11 @@ services:
         value: "False"
       - key: DJANGO_SETTINGS_MODULE
         value: fracture_ai.settings_prod
+      - key: ALLOWED_HOSTS
+        value: ".onrender.com"
       - key: PYTHON_VERSION
         value: "3.11.9"
+      - key: PYTHONDONTWRITEBYTECODE
+        value: "1"
+      - key: PYTHONUNBUFFERED
+        value: "1"
