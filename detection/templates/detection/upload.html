@@ -53,6 +53,13 @@
                         La imagen parece estar en blanco o es demasiado uniforme.
                         <strong>El análisis está bloqueado.</strong>
                     </div>
+                    <div id="drawing-warning" class="alert alert-danger d-none py-2 mb-3">
+                        <i class="bi bi-x-circle me-1"></i>
+                        <strong>Imagen rechazada: parece un dibujo o gráfico.</strong>
+                        Las radiografías tienen gradientes de gris suaves (tejidos, huesos).
+                        Esta imagen tiene solo blanco y negro puros, sin grises intermedios.
+                        <strong>El análisis está bloqueado.</strong>
+                    </div>
 
                     <!-- Zona de carga de imagen -->
                     <div class="upload-zone mb-4" id="drop-zone">
@@ -193,16 +200,19 @@
     }
 
     // Valida que la imagen sea una radiografía antes de permitir el envío.
-    // Criterios:
-    //   1. Colorfulness < 15  → imagen casi gris (R≈G≈B), rechaza fotos/caricaturas
-    //   2. StdDev luminancia > 20 → tiene contraste real, rechaza blancos/negros puros
+    // Tres checks independientes:
+    //   1. Colorfulness < 15    → casi gris (R≈G≈B); rechaza fotos/caricaturas color
+    //   2. StdDev > 20          → tiene contraste real; rechaza imágenes uniformes
+    //   3. MidGrayRatio > 0.12  → suficientes grises intermedios (40-210);
+    //                             rechaza dibujos B&W (solo negro puro + blanco puro)
+    //      Las radiografías reales tienen tejidos/huesos en rangos grises medios.
     function checkIfXray(dataUrl) {
-        const colorWarning = document.getElementById('color-warning');
-        const blankWarning = document.getElementById('blank-warning');
+        const colorWarning   = document.getElementById('color-warning');
+        const blankWarning   = document.getElementById('blank-warning');
+        const drawingWarning = document.getElementById('drawing-warning');
 
         const img = new Image();
         img.onload = function() {
-            // Samplear a 100×100 px para velocidad y precisión
             const canvas = document.createElement('canvas');
             canvas.width = 100; canvas.height = 100;
             const ctx = canvas.getContext('2d');
@@ -210,6 +220,7 @@
             const data = ctx.getImageData(0, 0, 100, 100).data;
 
             let totalColorfulness = 0;
+            let midGrayCount = 0;
             const luminances = [];
             const pixels = data.length / 4;
 
@@ -218,31 +229,33 @@
                 const avg = (r + g + b) / 3;
                 totalColorfulness += Math.abs(r - avg) + Math.abs(g - avg) + Math.abs(b - avg);
                 luminances.push(avg);
+                // Rango 40-210: donde aparecen tejidos y huesos en radiografías
+                if (avg >= 40 && avg <= 210) midGrayCount++;
             }
 
             const avgColorfulness = totalColorfulness / pixels;
+            const midGrayRatio    = midGrayCount / pixels;
 
-            // Desviación estándar de luminancia
             const meanLum = luminances.reduce((a, v) => a + v, 0) / pixels;
-            const stdDev = Math.sqrt(
+            const stdDev  = Math.sqrt(
                 luminances.reduce((s, v) => s + Math.pow(v - meanLum, 2), 0) / pixels
             );
 
-            // Evaluar checks
-            const isToColorful = avgColorfulness > 15;   // fotos/caricaturas
-            const isToUniform  = stdDev < 20;            // blanco/negro/gris uniforme
+            // Check 1: muy colorida → no es radiografía
+            const isColorful = avgColorfulness > 15;
+            // Check 2: demasiado uniforme → imagen en blanco/negro/gris sólido
+            const isUniform  = stdDev < 20;
+            // Check 3: dibujo B&W → tiene contraste pero casi sin grises intermedios
+            //   (el duck B&W tiene >30 stdDev pero solo ~5-8% de mid-gray)
+            const isDrawing  = !isUniform && midGrayRatio < 0.12;
 
-            colorWarning.classList.toggle('d-none', !isToColorful);
-            blankWarning.classList.toggle('d-none', !isToUniform);
+            colorWarning.classList.toggle('d-none',   !isColorful);
+            blankWarning.classList.toggle('d-none',   !isUniform);
+            drawingWarning.classList.toggle('d-none', !isDrawing);
 
-            // Bloquear o desbloquear el botón de análisis
-            const invalid = isToColorful || isToUniform;
+            const invalid = isColorful || isUniform || isDrawing;
             submitBtn.disabled = invalid;
-            if (invalid) {
-                submitBtn.title = 'Sube una radiografía válida de mano o muñeca';
-            } else {
-                submitBtn.title = '';
-            }
+            submitBtn.title = invalid ? 'Sube una radiografía válida de mano o muñeca' : '';
         };
         img.src = dataUrl;
     }
