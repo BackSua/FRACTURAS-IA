@@ -14,7 +14,8 @@ DEBUG = False
 # Acepta cualquier subdominio de onrender.com + localhost para health checks.
 _allowed = os.getenv('ALLOWED_HOSTS', '.onrender.com')
 ALLOWED_HOSTS = [h.strip() for h in _allowed.split(',')]
-ALLOWED_HOSTS += ['localhost', '127.0.0.1']
+# Agregar explícitamente el subdominio de Render y wildcard para cubrir cualquier variante
+ALLOWED_HOSTS += ['localhost', '127.0.0.1', 'fracturas-ia.onrender.com', '.onrender.com']
 
 # WhiteNoise sirve archivos estáticos sin necesidad de Nginx
 # Se inserta justo después de SecurityMiddleware
