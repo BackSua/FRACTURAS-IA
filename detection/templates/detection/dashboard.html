@@ -69,7 +69,9 @@
                 </h6>
             </div>
             <div class="card-body">
-                <canvas id="lossChart" height="300"></canvas>
+                <div style="position:relative; height:300px;">
+                    <canvas id="lossChart"></canvas>
+                </div>
                 <p class="small text-muted mt-2 mb-0">
                     Si la curva de validation loss sube mientras train loss baja, hay overfitting.
                 </p>
@@ -86,7 +88,9 @@
                 </h6>
             </div>
             <div class="card-body">
-                <canvas id="metricsChart" height="300"></canvas>
+                <div style="position:relative; height:300px;">
+                    <canvas id="metricsChart"></canvas>
+                </div>
                 <p class="small text-muted mt-2 mb-0">
                     Evolución de precisión, recall y mAP durante el entrenamiento.
                 </p>
@@ -103,7 +107,9 @@
                 </h6>
             </div>
             <div class="card-body">
-                <canvas id="finalMetricsChart" height="300"></canvas>
+                <div style="position:relative; height:300px;">
+                    <canvas id="finalMetricsChart"></canvas>
+                </div>
                 <p class="small text-muted mt-2 mb-0">
                     Rendimiento final evaluado sobre el conjunto de test (datos nunca vistos).
                 </p>
