@@ -9,7 +9,7 @@ gunicorn
 whitenoise
 python-dotenv
 
-# ── Modelo de IA (inferencia únicamente — sin albumentations) ──────────────
+# ── Modelo de IA (inferencia únicamente) ───────────────────────────────────
 ultralytics>=8.0
 opencv-python-headless
 Pillow
