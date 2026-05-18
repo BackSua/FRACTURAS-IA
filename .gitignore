@@ -1,4 +1,4 @@
-# Python
+﻿# Python
 venv/
 __pycache__/
 *.pyc
@@ -10,7 +10,7 @@ build/
 # Django
 db.sqlite3
 media/
-staticfiles/
+# staticfiles/ — ahora versionado
 
 # Environment
 .env
@@ -21,8 +21,8 @@ dataset/
 # YOLO training runs
 runs/
 
-# Model weights — tracked via Git LFS (no ignorar)
-# ml/models/*.pt  ← comentado: se sube con LFS
+# Model weights â€” tracked via Git LFS (no ignorar)
+# ml/models/*.pt  â† comentado: se sube con LFS
 
 # IDE
 .vscode/
@@ -37,7 +37,7 @@ Thumbs.db
 # Logs
 *.log
 
-# Base model weights en ra�z (no necesarios en repo)
+# Base model weights en raíz (no necesarios en repo)
 yolov8m.pt
 yolo26n.pt
 
