@@ -246,15 +246,23 @@ class DashboardView(View):
         if not args_path.exists():
             return {}
 
+        # Solo mostrar los parámetros relevantes para la presentación
+        RELEVANT_KEYS = [
+            'model', 'epochs', 'batch', 'imgsz', 'optimizer',
+            'lr0', 'lrf', 'patience', 'device', 'seed',
+            'weight_decay', 'warmup_epochs', 'augment',
+            'mosaic', 'degrees', 'fliplr', 'amp',
+        ]
+
         try:
-            # Parseo simple de YAML sin dependencia externa
-            args = {}
+            raw = {}
             content = args_path.read_text(encoding='utf-8')
             for line in content.split('\n'):
                 if ':' in line and not line.strip().startswith('#'):
                     key, _, value = line.partition(':')
-                    args[key.strip()] = value.strip()
-            return args
+                    raw[key.strip()] = value.strip()
+            # Devolver solo los parámetros relevantes que existan en el archivo
+            return {k: raw[k] for k in RELEVANT_KEYS if k in raw}
         except Exception as e:
             logger.error(f"Error leyendo args.yaml: {e}")
             return {}
