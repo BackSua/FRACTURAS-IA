@@ -40,12 +40,18 @@
                 <form method="post" enctype="multipart/form-data" id="upload-form">
                     {% csrf_token %}
 
-                    <!-- Aviso imagen no válida -->
-                    <div id="color-warning" class="alert alert-warning d-none py-2 mb-3">
-                        <i class="bi bi-exclamation-triangle me-1"></i>
-                        <strong>La imagen parece muy colorida.</strong>
-                        Las radiografías son casi grises. Asegúrate de subir una radiografía real
-                        para obtener resultados válidos.
+                    <!-- Avisos de validación de imagen -->
+                    <div id="color-warning" class="alert alert-danger d-none py-2 mb-3">
+                        <i class="bi bi-x-circle me-1"></i>
+                        <strong>Imagen rechazada: demasiado colorida.</strong>
+                        Las radiografías son en escala de grises. Esta imagen no parece una radiografía.
+                        <strong>El análisis está bloqueado.</strong>
+                    </div>
+                    <div id="blank-warning" class="alert alert-danger d-none py-2 mb-3">
+                        <i class="bi bi-x-circle me-1"></i>
+                        <strong>Imagen rechazada: sin contenido suficiente.</strong>
+                        La imagen parece estar en blanco o es demasiado uniforme.
+                        <strong>El análisis está bloqueado.</strong>
                     </div>
 
                     <!-- Zona de carga de imagen -->
@@ -146,6 +152,10 @@
     // Preview al seleccionar archivo
     fileInput.addEventListener('change', function() {
         if (this.files && this.files[0]) {
+            // Deshabilitar el botón inmediatamente mientras se valida
+            submitBtn.disabled = true;
+            document.getElementById('color-warning').classList.add('d-none');
+            document.getElementById('blank-warning').classList.add('d-none');
             showPreview(this.files[0]);
         }
     });
@@ -182,37 +192,61 @@
         reader.readAsDataURL(file);
     }
 
-    // Detecta si la imagen es muy colorida (no es radiografía)
-    // Las radiografías son casi en escala de grises: R ≈ G ≈ B
+    // Valida que la imagen sea una radiografía antes de permitir el envío.
+    // Criterios:
+    //   1. Colorfulness < 15  → imagen casi gris (R≈G≈B), rechaza fotos/caricaturas
+    //   2. StdDev luminancia > 20 → tiene contraste real, rechaza blancos/negros puros
     function checkIfXray(dataUrl) {
         const colorWarning = document.getElementById('color-warning');
+        const blankWarning = document.getElementById('blank-warning');
+
         const img = new Image();
         img.onload = function() {
+            // Samplear a 100×100 px para velocidad y precisión
             const canvas = document.createElement('canvas');
-            // Samplear a 50x50 para velocidad
-            canvas.width = 50; canvas.height = 50;
+            canvas.width = 100; canvas.height = 100;
             const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0, 50, 50);
-            const data = ctx.getImageData(0, 0, 50, 50).data;
+            ctx.drawImage(img, 0, 0, 100, 100);
+            const data = ctx.getImageData(0, 0, 100, 100).data;
+
             let totalColorfulness = 0;
+            const luminances = [];
             const pixels = data.length / 4;
+
             for (let i = 0; i < data.length; i += 4) {
-                const r = data[i], g = data[i+1], b = data[i+2];
-                // Cuánto difieren los canales entre sí (0 = gris perfecto)
+                const r = data[i], g = data[i + 1], b = data[i + 2];
                 const avg = (r + g + b) / 3;
-                const diff = Math.abs(r - avg) + Math.abs(g - avg) + Math.abs(b - avg);
-                totalColorfulness += diff;
+                totalColorfulness += Math.abs(r - avg) + Math.abs(g - avg) + Math.abs(b - avg);
+                luminances.push(avg);
             }
+
             const avgColorfulness = totalColorfulness / pixels;
-            // Umbral: si el promedio de diferencia de canal > 15 → muy colorida
-            if (avgColorfulness > 15) {
-                colorWarning.classList.remove('d-none');
+
+            // Desviación estándar de luminancia
+            const meanLum = luminances.reduce((a, v) => a + v, 0) / pixels;
+            const stdDev = Math.sqrt(
+                luminances.reduce((s, v) => s + Math.pow(v - meanLum, 2), 0) / pixels
+            );
+
+            // Evaluar checks
+            const isToColorful = avgColorfulness > 15;   // fotos/caricaturas
+            const isToUniform  = stdDev < 20;            // blanco/negro/gris uniforme
+
+            colorWarning.classList.toggle('d-none', !isToColorful);
+            blankWarning.classList.toggle('d-none', !isToUniform);
+
+            // Bloquear o desbloquear el botón de análisis
+            const invalid = isToColorful || isToUniform;
+            submitBtn.disabled = invalid;
+            if (invalid) {
+                submitBtn.title = 'Sube una radiografía válida de mano o muñeca';
             } else {
-                colorWarning.classList.add('d-none');
+                submitBtn.title = '';
             }
         };
         img.src = dataUrl;
     }
+
 
     // Spinner al enviar
     form.addEventListener('submit', function() {
