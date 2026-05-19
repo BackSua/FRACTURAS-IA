@@ -4,6 +4,12 @@ Sistema web para detección automática de fracturas en radiografías de mano y 
 
 **Proyecto Final de Inteligencia Artificial** — CORHUILA, Ingeniería de Sistemas, Semestre 2026-1.
 
+## 🚀 Aplicación en producción
+
+**[https://fracturas-ia.onrender.com](https://fracturas-ia.onrender.com)**
+
+> ⚠️ El servidor puede tardar ~30 segundos en responder la primera vez si estuvo inactivo (Render free tier).
+
 ---
 
 ## Tecnologías
